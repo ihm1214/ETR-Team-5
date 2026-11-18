@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import '../mock_data.dart';
+import '../auth.dart';
 import '../models.dart';
+import '../widgets.dart';
+import 'create_account_screen.dart';
 import 'director_home_screen.dart';
 import 'family_home_screen.dart';
 import 'forgot_password_screen.dart';
@@ -23,19 +25,23 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
-  String? _emailErr, _passErr;
+  String? _emailErr, _passErr, _loginErr;
   bool _hide = true;
 
   void _login() {
     setState(() {
-      _emailErr = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(_email.text.trim())
-          ? null
-          : 'Enter a valid email address';
-      _passErr = _pass.text.length >= 8 ? null : 'Password must be at least 8 characters';
+      _loginErr = null;
+      _emailErr = isValidEmail(_email.text) ? null : 'Enter a valid email address';
+      _passErr = _pass.text.isEmpty ? 'Enter your password' : null;
     });
     if (_emailErr != null || _passErr != null) return;
-    db.log(widget.role.label, 'logged in');
-    // In a real app, the SERVER decides the role from the account.
+    if (!requireOnline(context)) return;
+
+    final err = auth.logIn(widget.role, _email.text, _pass.text);
+    if (err != null) {
+      setState(() => _loginErr = err);
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => homeFor(widget.role)),
       (r) => false,
@@ -45,46 +51,62 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.role.label} login')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          TextField(
-            controller: _email,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(labelText: 'Username / email', border: const OutlineInputBorder(), errorText: _emailErr),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _pass,
-            obscureText: _hide,
-            decoration: InputDecoration(
-              labelText: 'Password',
-              border: const OutlineInputBorder(),
-              errorText: _passErr,
-              suffixIcon: IconButton(
-                icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),
-                onPressed: () => setState(() => _hide = !_hide),
-              ),
+      appBar: AppBar(title: Text('${widget.role.label} login'), actions: const [OnlineToggle()]),
+      body: ListView(padding: const EdgeInsets.all(24), children: [
+        const OfflineBanner(),
+        TextField(
+          controller: _email,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(labelText: 'Username / email', border: const OutlineInputBorder(), errorText: _emailErr),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _pass,
+          obscureText: _hide,
+          decoration: InputDecoration(
+            labelText: 'Password',
+            border: const OutlineInputBorder(),
+            errorText: _passErr,
+            suffixIcon: IconButton(
+              icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),
+              onPressed: () => setState(() => _hide = !_hide),
             ),
           ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
-              child: const Text('Forgot password? Use a one-time code'),
-            ),
+        ),
+        if (_loginErr != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_loginErr!, style: const TextStyle(color: Colors.red)),
           ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
+            child: const Text('Forgot password? Use a one-time code'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        FilledButton(onPressed: _login, child: const Text('Log in')),
+        if (widget.role == UserRole.family) ...[
           const SizedBox(height: 8),
-          FilledButton(onPressed: _login, child: const Text('Log in')),
-          const SizedBox(height: 8),
-          OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Back')),
-          const SizedBox(height: 16),
-          const Text('Prototype: any valid email and an 8+ character password works.',
-              style: TextStyle(color: Colors.grey)),
-        ]),
-      ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CreateAccountScreen())),
+            child: const Text('Create account'),
+          ),
+        ],
+        const SizedBox(height: 8),
+        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Back')),
+        const SizedBox(height: 16),
+        Text(
+          switch (widget.role) {
+            UserRole.family => 'Demo: parent@demo.org / Parent1234!  (or create an account)',
+            UserRole.staff => 'Demo: staff@demo.org / Staff1234!',
+            UserRole.director => 'Demo: director@demo.org / Director1234!',
+          },
+          style: const TextStyle(color: Colors.grey),
+        ),
+      ]),
     );
   }
 }
